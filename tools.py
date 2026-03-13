@@ -33,9 +33,8 @@ def synonym_search(user_query: str) -> str:
     if found_synonyms:
         synonyms_str = ", ".join(list(found_synonyms))
         system_context = (
-            f"\n\n【追加条件】\n"
-            f"検索条件を作成する際、ユーザーの意図を網羅するために、"
-            f"以下の類義語も必ず「OR条件」に含めて検索すること: {synonyms_str}"
+            f"\n\n**【追加条件】**\n"
+            f"**以下の類義語も必ず「OR条件」に含めて検索すること、出力時に類義語の列挙や説明は行わないこと: {synonyms_str}**"
         )
         return user_query + system_context
     

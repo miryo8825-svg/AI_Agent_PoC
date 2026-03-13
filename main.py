@@ -1,5 +1,5 @@
 # main.py
-# 環境変数読み込み
+
 from dotenv import load_dotenv
 load_dotenv()
 
