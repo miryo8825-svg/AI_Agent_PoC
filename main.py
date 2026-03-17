@@ -3,6 +3,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import uuid
 import time
 from agent import root_agent
 from tools import synonym_search
@@ -14,18 +15,48 @@ from google.genai import types
 
 APP_NAME = "AI_Agent_PoC"
 USER_ID = "mark"
-SESSION_ID = "session_001"
+SESSION_ID = f"session_{uuid.uuid4()}" # 毎回ユニークにする
 
 async def call_agent_async(runner, query: str): 
     # メッセージ作成
     content = types.Content(role='user', parts=[types.Part(text=query)])
     
     response = "Agent did not produce a final response."
-
+    
     # イベントを反復処理
     async for event in runner.run_async(user_id=USER_ID, session_id=SESSION_ID, new_message=content):
+        
+        # ツール呼び出しの試行を確認
+        if hasattr(event, 'tool_calls') and event.tool_calls:
+            print(f"[DEBUG] LLMがツール呼び出しを生成: {event.tool_calls}")
+
+        # エラーイベントを捕捉
+        # ADKではエラーが起きると actions.escalate や error_message が入ることがあります
+        if hasattr(event, 'actions') and event.actions and event.actions.escalate:
+            print(f"!!! [ERROR EVENT] Agent escalated: {event.error_message}")
+        
+        if hasattr(event, 'tool_outputs') and event.tool_outputs:
+            for output in event.tool_outputs:
+                print(f"\n>>> [検索結果ログ] {output}")
+        
         # デバッグ用（全イベント出力）
         print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}")
+
+        # 属性リストを表示
+        attrs = [a for a in dir(event) if not a.startswith('__')]
+        print(f"\n--- [DEBUG] Event Type: {type(event).__name__} ---")
+        
+        # 重要な属性があるか一つずつ確認
+        for attr in attrs:
+            try:
+                val = getattr(event, attr)
+                # 辞書やオブジェクトの中身が大きすぎる場合を考慮
+                if val is not None:
+                    # 'tool' や 'action' という言葉を含む属性があれば詳しく表示
+                    if any(x in attr.lower() for x in ['tool', 'action', 'content', 'message']):
+                        print(f"  [Attr: {attr}] = {val}")
+            except Exception:
+                continue
 
         if event.is_final_response():
             if event.content and event.content.parts:
