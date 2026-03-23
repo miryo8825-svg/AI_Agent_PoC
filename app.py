@@ -14,6 +14,24 @@ load_dotenv()
 APP_NAME = "AI_Agent_PoC"
 USER_ID = "mark"
 
+# パスワード認証
+def check_password():
+    # 認証済みならTrueを返す
+    if st.session_state.get("password_correct"):
+        return True
+
+    # 未認証なら入力欄を表示
+    password = st.text_input("パスワードを入力してください", type="password")
+    
+    if st.button("ログイン"):
+        if password == "hK7En*XQ":
+            st.session_state["password_correct"] = True
+            st.rerun()  # 画面再読み込み
+        else:
+            st.error("パスワードが違います")
+            return False
+    return False
+
 # セッションIDをキャッシュさせるために関数化
 @st.cache_resource
 def get_session_info():
@@ -56,10 +74,14 @@ async def call_agent_async(runner, session_id, query: str):
 def main():
     st.title("AI Agent PoC")
     
+    # 認証チェックを実行
+    if not check_password():
+        st.stop()  # ここで処理を止める
+    
     # 初期化
     runner, session_id = init_runner()
     
-    query = st.text_input("質問を入力してください")
+    query = st.text_input("質問を入力してください", type="text")
     
     if st.button("検索"):
         if query:
