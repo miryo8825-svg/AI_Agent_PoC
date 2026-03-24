@@ -2,6 +2,8 @@ import uuid
 import time
 import asyncio
 import streamlit as st
+from datetime import datetime
+from google.cloud import firestore
 from dotenv import load_dotenv
 from agent import root_agent
 from tools import synonym_search
@@ -11,15 +13,19 @@ from google.genai import types
 
 load_dotenv()
 
+# Firestoreクライアントの初期化
+db = firestore.Client(database="ai-agent-poc-01")
+
 APP_NAME = "AI_Agent_PoC"
 
-# 1. ユーザー管理
+# ユーザー管理 
 VALID_USERS = {
-    "marklines": {"password": "hK7En*XQ", "name": "marklines"}
+    "marklines": {"password": "hK7En*XQ", "name": "marklines"},
+    "test001": {"password": "3901ir@", "name": "test001"}
 }
 
+# ログインフォーム
 def login_form():
-    """ログインフォーム"""
     if "user" not in st.session_state:
         st.session_state.user = None
     
@@ -36,15 +42,26 @@ def login_form():
                     st.error("ユーザー名またはパスワードが違います")
         st.stop()
 
-# --- 認証実行 ---
+# 認証実行
 login_form()
 current_user = st.session_state.user
 
-# --- 以降は認証済みユーザーのみ ---
-st.title("AI Agent PoC")
-st.write(f"*ログイン中*　ユーザー：{current_user}")
+# 履歴管理 (Firestore)
+def save_history(user, query, res, elapsed):
+    db.collection("chat_history").add({
+        "user": user,
+        "query": query,
+        "res": res,
+        "time": elapsed,
+        "timestamp": datetime.now()
+    })
 
-# 2. Runner初期化
+def load_history(user):
+    # Firestoreからログインユーザーの履歴を最新順に取得
+    docs = db.collection("chat_history").where("user", "==", user).order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
+    return [d.to_dict() for d in docs]
+
+# Runner初期化
 @st.cache_resource
 def init_runner(user_id):
     session_service = InMemorySessionService()
@@ -60,10 +77,30 @@ async def call_agent_async(runner, user_id, session_id, query: str):
             return event.content.parts[0].text if event.content else "回答なし"
     return "Agent did not produce a final response."
 
-# 実行部
+# サイドバーとメインのロジック
 runner, session_id = init_runner(current_user)
 
-# フォームで囲むことでエンターキー送信を有効化
+with st.sidebar:
+    st.header("AI Agent PoC")
+
+    # 会話履歴の更新(自動更新されない場合)
+    if st.button("履歴を更新"):
+        st.rerun()
+    
+    st.divider()
+    # DBから読み込み
+    histories = load_history(current_user)
+    for i, item in enumerate(histories):
+        # 履歴選択時に状態をセット
+        if st.button(f"{item['query'][:20]}... \n[{item['time']:.2f}s]", key=f"hist_{i}"):
+            st.session_state.selected_history = item
+            st.rerun() # 即時反映
+
+# --- メイン画面 ---
+st.title("AI Agent PoC")
+st.write(f"*ログイン中*　ユーザー：{current_user}")
+
+# 検索フォームを常に上部に配置
 with st.form("search_form", clear_on_submit=True):
     query = st.text_input("質問を入力してください")
     submit_button = st.form_submit_button("検索")
@@ -72,16 +109,40 @@ if submit_button:
     if query:
         start_all = time.time()
         with st.spinner("検索中…"):
-            q = synonym_search(query)
-            res = asyncio.run(call_agent_async(runner, current_user, session_id, q))
-            st.write(f"質問：{query}")
-            st.write("回答：")
-            st.write(res)
+            res = asyncio.run(call_agent_async(runner, current_user, session_id, synonym_search(query)))
+            elapsed = time.time() - start_all
             
-            # 実行時間計測の復活
-            end_all = time.time()
-            elapsed_time = end_all - start_all
-            st.divider()
-            st.info(f"実行時間: {elapsed_time:.2f} 秒")
+            # DBに保存
+            save_history(current_user, query, res, elapsed)
+            
+            # 直後の検索結果を表示用にセット
+            st.session_state.selected_history = {
+                "query": query, 
+                "res": res, 
+                "time": elapsed
+            }
+            # 検索時は履歴の表示状態を維持したいため、rerunは不要（そのまま以下の表示処理へ進む）
     else:
         st.warning("質問を入力してください")
+
+# 結果表示
+if st.session_state.get("selected_history"):
+    st.divider()
+    
+    # 質問カード
+    with st.container(border=True):
+        st.caption("質問")
+        st.write(st.session_state.selected_history['query'])
+    
+    # 回答カード
+    with st.container(border=True):
+        st.caption("回答")
+        res_text = st.session_state.selected_history['res']
+        st.write(res_text)
+        
+        # コピーボタン
+        # if st.button("Copy"):
+        #     st.write(f'<script>navigator.clipboard.writeText(`{res_text.replace("`", "")}`)</script>', unsafe_allow_html=True)
+        #     st.toast("クリップボードにコピーしました")
+
+    st.info(f"実行時間：{st.session_state.selected_history['time']:.2f} 秒")
