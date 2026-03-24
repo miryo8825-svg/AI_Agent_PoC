@@ -2,6 +2,6 @@
 __pycache__
 *.pyc
 .git
-.env
-.venv
-.vscode
+#.env
+#.venv
+#.vscode

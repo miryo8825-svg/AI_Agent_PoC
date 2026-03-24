@@ -3,5 +3,3 @@ google-adk>=1.26.0
 python-dotenv>=1.2.2
 requests>=2.32.0
 google-cloud-discoveryengine>=0.13.0
-# Optional helper packages (uncomment if used):
-# google-genai>=1.66.0
