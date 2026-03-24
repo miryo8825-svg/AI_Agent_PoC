@@ -81,7 +81,7 @@ def main():
     # 初期化
     runner, session_id = init_runner()
     
-    query = st.text_input("質問を入力してください", type="text")
+    query = st.text_input("質問を入力してください")
     
     if st.button("検索"):
         if query:

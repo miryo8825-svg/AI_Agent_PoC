@@ -9,7 +9,7 @@ from google.adk.agents import LlmAgent
 from google.adk.tools import VertexAiSearchTool
 from google.adk.tools import google_search
 
-DATA_STORE_PATH = 'projects/gen-lang-client-0531287984/locations/global/collections/default_collection/dataStores/ai-agent-poc-1_1772677284079_ai_agent_poc_external_formatted'
+DATA_STORE_PATH = 'projects/gen-lang-client-0531287984/locations/global/collections/default_collection/dataStores/ai-agent-poc2_1774259178825_opensearch_output_formatted'
 DEFAULT_MODEL = 'gemini-3.1-flash-lite-preview'
 
 # ------------------------------------------
