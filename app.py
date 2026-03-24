@@ -98,7 +98,16 @@ with st.sidebar:
 
 # --- メイン画面 ---
 st.title("AI Agent PoC")
-st.write(f"*ログイン中*　ユーザー：{current_user}")
+
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.write(f"*ログイン中*　ユーザー：{current_user}")
+with col2:
+    if st.button("ログアウト"):
+        # セッション状態をクリアしてリロード
+        st.session_state.user = None
+        st.session_state.selected_history = None
+        st.rerun()
 
 # 検索フォームを常に上部に配置
 with st.form("search_form", clear_on_submit=True):
