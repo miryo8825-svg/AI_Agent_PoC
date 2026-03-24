@@ -42,7 +42,7 @@ current_user = st.session_state.user
 
 # --- 以降は認証済みユーザーのみ ---
 st.title("AI Agent PoC")
-st.write(f"ログイン中　ユーザー：{current_user}")
+st.write(f"*ログイン中*　ユーザー：{current_user}")
 
 # 2. Runner初期化
 @st.cache_resource
@@ -64,7 +64,7 @@ async def call_agent_async(runner, user_id, session_id, query: str):
 runner, session_id = init_runner(current_user)
 
 # フォームで囲むことでエンターキー送信を有効化
-with st.form("search_form"):
+with st.form("search_form", clear_on_submit=True):
     query = st.text_input("質問を入力してください")
     submit_button = st.form_submit_button("検索")
 
@@ -74,7 +74,8 @@ if submit_button:
         with st.spinner("検索中…"):
             q = synonym_search(query)
             res = asyncio.run(call_agent_async(runner, current_user, session_id, q))
-            st.subheader("回答:")
+            st.write(f"質問：{query}")
+            st.write("回答：")
             st.write(res)
             
             # 実行時間計測の復活
