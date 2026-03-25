@@ -21,21 +21,29 @@ if os.path.exists(SYNONYMS_FILE_PATH):
                 SYNONYM_DICT[word].update([w for w in words if w != word])
 
 def synonym_search(user_query: str) -> str:
+    # 共通条件
+    source_condition = (
+        f"\n\n**【追加条件】**\n"
+        f"- **分析レポートの文中に、出典の完全なURLを必ず含めること。フォーマットは[[1](URL)]形式にすること。**"
+    )
+    
+    # SYNONYM_DICTがない場合、出典条件のみを付与
     if not SYNONYM_DICT:
-        return user_query
+        return user_query + source_condition
 
+    # 類義語マッチング処理
     found_synonyms = set()
-    # クエリ文字列に類義語が存在するかマッチング
     for key, synonyms in SYNONYM_DICT.items():
         if key in user_query:
             found_synonyms.update(synonyms)
     
+    # 類義語がある場合、共通条件の後に結合
     if found_synonyms:
         synonyms_str = ", ".join(list(found_synonyms))
         system_context = (
-            f"\n\n**【追加条件】**\n"
-            f"**以下の類義語も必ず「OR条件」に含めて検索すること、出力時に類義語の列挙や説明は行わないこと: {synonyms_str}**"
+            f"- **以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと: {synonyms_str}**"
         )
-        return user_query + system_context
+        return user_query + source_condition + system_context
     
-    return user_query
+    # 類義語がない場合、出典条件のみを付与
+    return user_query + source_condition
