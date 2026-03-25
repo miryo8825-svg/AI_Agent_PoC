@@ -14,7 +14,7 @@ from google.genai import types
 load_dotenv()
 
 # Firestoreクライアントの初期化
-db = firestore.Client(database="ai-agent-poc-01")
+db = firestore.Client()
 
 APP_NAME = "AI_Agent_PoC"
 
@@ -48,12 +48,15 @@ current_user = st.session_state.user
 
 # 履歴管理 (Firestore)
 def save_history(user, query, res, elapsed):
+    # 全体の件数をカウントしてIDを生成
+    total_count = db.collection("chat_history").count().get()[0][0].value
     db.collection("chat_history").add({
         "user": user,
         "query": query,
         "res": res,
         "time": elapsed,
-        "timestamp": datetime.now()
+        "timestamp": datetime.now(),
+        "id": (total_count + 1).zfill(5)  # 全体連番を付与
     })
 
 def load_history(user):
@@ -96,10 +99,11 @@ with st.sidebar:
     # DBから読み込み
     histories = load_history(current_user)
     for i, item in enumerate(histories):
-        # 履歴選択時に状態をセット
-        if st.button(f"{item['query'][:20]}... \n[{item['time']:.2f}s]", key=f"hist_{i}"):
-            st.session_state.selected_history = item
-            st.rerun() # 即時反映
+        # 履歴選択時にIDも含めてセット
+        h_id = item.get("id", "?") # 過去データ用
+        if st.button(f"{h_id}: {item['query'][:20]}...", key=f"hist_{i}"):
+            st.session_state.selected_history = {**item, "id": h_id}
+            st.rerun()
 
 # --- メイン画面 ---
 st.title("AI Agent PoC")
@@ -142,10 +146,12 @@ if submit_button:
 # 結果表示
 if st.session_state.get("selected_history"):
     st.divider()
+    h_id = st.session_state.selected_history.get("id", "?")
+    st.subheader(f"No.{h_id} の会話") # タイトルにIDを表示
     
     # 質問カード
     with st.container(border=True):
-        st.caption("質問")
+        st.caption(f"質問 (No.{h_id})")
         st.write(st.session_state.selected_history['query'])
     
     # 回答カード
