@@ -82,10 +82,15 @@ runner, session_id = init_runner(current_user)
 
 with st.sidebar:
     st.header("AI Agent PoC")
-
-    # 会話履歴の更新(自動更新されない場合)
-    if st.button("履歴を更新"):
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        # 会話履歴の更新(自動更新されない場合)
+        if st.button("履歴を更新"):
+            st.rerun()
+    with col2:
+        if st.button("新規チャット"):
+            st.session_state.selected_history = None
+            st.rerun()
     
     st.divider()
     # DBから読み込み
