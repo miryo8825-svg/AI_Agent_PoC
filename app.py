@@ -19,10 +19,12 @@ db = firestore.Client(database="ai-agent-poc-01")
 APP_NAME = "AI_Agent_PoC"
 
 # ユーザー管理 
-VALID_USERS = {
-    "marklines": {"password": "hK7En*XQ", "name": "marklines"},
-    "test001": {"password": "3901ir@", "name": "test001"}
-}
+valid_users_raw = os.getenv("VALID_USERS_JSON", "{}")
+try:
+    VALID_USERS = json.loads(valid_users_raw)
+except json.JSONDecodeError:
+    st.error("環境変数 VALID_USERS の取得に失敗しました。")
+    VALID_USERS = {}
 
 # ログインフォーム
 def login_form():

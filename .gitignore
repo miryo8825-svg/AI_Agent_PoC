@@ -1,0 +1,8 @@
+# gitignore
+.venv
+.git
+.adk
+__pycache__
+*.pyc
+.env
+.streamlit
