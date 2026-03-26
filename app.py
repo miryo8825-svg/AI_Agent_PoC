@@ -14,7 +14,7 @@ from google.genai import types
 load_dotenv()
 
 # Firestoreクライアントの初期化
-db = firestore.Client()
+db = firestore.Client(database="ai-agent-poc-01")
 
 APP_NAME = "AI_Agent_PoC"
 
@@ -56,8 +56,9 @@ def save_history(user, query, res, elapsed):
         "res": res,
         "time": elapsed,
         "timestamp": datetime.now(),
-        "id": (total_count + 1).zfill(5)  # 全体連番を付与
+        "id": total_count + 1
     })
+    return total_count + 1
 
 def load_history(user):
     # Firestoreからログインユーザーの履歴を最新順に取得
@@ -101,7 +102,7 @@ with st.sidebar:
     for i, item in enumerate(histories):
         # 履歴選択時にIDも含めてセット
         h_id = item.get("id", "?") # 過去データ用
-        if st.button(f"{h_id}: {item['query'][:20]}...", key=f"hist_{i}"):
+        if st.button(f"No.{h_id}: {item['query'][:20]}...", key=f"hist_{i}"):
             st.session_state.selected_history = {**item, "id": h_id}
             st.rerun()
 
@@ -130,11 +131,12 @@ if submit_button:
             res = asyncio.run(call_agent_async(runner, current_user, session_id, synonym_search(query)))
             elapsed = time.time() - start_all
             
-            # DBに保存
-            save_history(current_user, query, res, elapsed)
+            # DBに保存しIDを取得
+            id = save_history(current_user, query, res, elapsed)
             
             # 直後の検索結果を表示用にセット
             st.session_state.selected_history = {
+                "id": id,
                 "query": query, 
                 "res": res, 
                 "time": elapsed
@@ -147,11 +149,10 @@ if submit_button:
 if st.session_state.get("selected_history"):
     st.divider()
     h_id = st.session_state.selected_history.get("id", "?")
-    st.subheader(f"No.{h_id} の会話") # タイトルにIDを表示
     
     # 質問カード
     with st.container(border=True):
-        st.caption(f"質問 (No.{h_id})")
+        st.caption(f"質問 *No.{h_id}*")
         st.write(st.session_state.selected_history['query'])
     
     # 回答カード
