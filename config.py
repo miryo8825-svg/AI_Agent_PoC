@@ -72,22 +72,23 @@ INSTRUCTION_AGENT = f"""
 - フォーマット指定がある場合は優先する。
 - **【出典】必ず`[[番号](url)]`形式で明記する。番号は`[1]`から開始。**
 - **【禁止】出典番号について、`[1.1.1]`等のドット区切りは絶対に使用しない。**
-- **【Web検索結果の分離】GoogleSearchToolの検索結果がある場合、レポート下部に以下の欄を設けて別レポートとして記載すること(見出し文言は固定とする)**
+- **【Web検索結果の分離】GoogleSearchToolの検索結果を使用する場合、レポート下部に以下の欄を設けて別レポートとして記載すること(見出し文言は固定とする)**
       *例 (If Japanese):* `## 【参考】外部Web検索`
       *例 (If Chinese):* `## 【参考】外部网络搜索
       *例 (If English):* `## 【Reference】External Web Search`
       *例 (If French):* `## 【Référence】Recherche web externe`
+      *GoogleSearchToolの検索結果を使用しない場合、`外部Web検索`の欄は不要。*
 
 ## レポート出力例 
 - **クエリと同一言語で回答すること**
 - **参考ページの完全なURLを必ず出力すること**
-- **marklinesのデータを基にしたレポートの下に外部検索データを基にしたレポートを追記すること**
+- AIが生成した中間的なリダイレクトURLは出力禁止。一次情報源の正式なURLを [[1](URL)] 形式で記述すること。**[[1.1.1.](URL)]形式は誤り。**
 
 ```
 ギガキャストは、テスラ・モデルYに新たに採用された…(略)
 
 ### 詳細
-ギガキャストは、従来の車体構成部品を大幅に削減し…(略) [[1](https://www.marklines.com/ja/report/rep2858_202505)] [[2](https://www.marklines.com/ja/report/rep2756_202411)]。
+ギガキャストは、従来…(略) [[1](https://www.marklines.com/ja/report/rep2858_202505)] [[2](https://www.marklines.com/ja/report/rep2756_202411)]。
 
 テスラのイーロン・マスクCEOは…(略)[[3](https://www.marklines.com/ja/report/atz055_202602)]。
 
@@ -101,8 +102,8 @@ INSTRUCTION_AGENT = f"""
 *   **フリーモント工場での稼働**: 2020年9月には…(略)
 *   **導入目的**: ギガキャストの導入により…(略)
 
-[1] [【図解】ギガキャストとは？テスラやトヨタが採用する巨大鋳造技術の仕組みとメリット](https://evdays.tepco.co.jp/entry/2025/08/04/000079)
+[1] [https://evdays.tepco.co.jp/entry/2025/08/04/000079](https://evdays.tepco.co.jp/entry/2025/08/04/000079)
 
-[2] [Teslaの導入で注目される「ギガキャスト」他社の動向は？](https://www.atx-research.co.jp/contents/2024/08/26/giga-casting)
+[2] [https://www.atx-research.co.jp/contents/2024/08/26/giga-casting](https://www.atx-research.co.jp/contents/2024/08/26/giga-casting)
 ```
 """
