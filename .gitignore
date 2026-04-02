@@ -1,8 +1,9 @@
 # gitignore
-.venv
-.git
 .adk
-__pycache__
-*.pyc
+.bk
 .env
+.git
+.__pycache__
+*.pyc
 .streamlit
+.venv
