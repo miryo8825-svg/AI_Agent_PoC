@@ -1,4 +1,9 @@
-FROM python:3.11-slim
+FROM --platform=linux/amd64 python:3.11-slim
+
+# Pythonのログ出力をバッファリングせず即座に表示させる（デバッグに必須）
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
 WORKDIR /app
 
 # 1. requirements.txt だけコピーしてインストール

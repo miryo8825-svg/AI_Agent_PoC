@@ -1,29 +1,41 @@
+# app.py
+import os
+import json
 import uuid
 import time
 import asyncio
 import streamlit as st
 from datetime import datetime
 from google.cloud import firestore
+from pathlib import Path
 from dotenv import load_dotenv
-from agent import root_agent
 from tools import synonym_search
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
+# LangGraph関連のインポート
+from agent import app_agent
+from langchain_core.messages import HumanMessage
+
+# デバッグ
+# st.write(f"Files in /app: {os.listdir('.')}")
 load_dotenv()
 
 # Firestoreクライアントの初期化
-db = firestore.Client(database="ai-agent-poc-01")
+db = firestore.Client(database="ai-agent-poc-02")
 
 APP_NAME = "AI_Agent_PoC"
 
-# ユーザー管理 
+# --- ユーザー管理 ---
 valid_users_raw = os.getenv("VALID_USERS_JSON", "{}")
+
+# デバッグ用（エラーが出る場合のみコメントを外して確認）
+# st.write(f"DEBUG: {valid_users_raw}") 
+
 try:
-    VALID_USERS = json.loads(valid_users_raw)
-except json.JSONDecodeError:
-    st.error("環境変数 VALID_USERS の取得に失敗しました。")
+    # 前後の不要な引用符や空白を削除してからパース
+    clean_json = valid_users_raw.strip().strip("'").strip('"')
+    VALID_USERS = json.loads(clean_json)
+except json.JSONDecodeError as e:
+    st.error(f"環境変数 VALID_USERS_JSON の形式が正しくありません。エラー: {e}")
     VALID_USERS = {}
 
 # ログインフォーム
@@ -48,6 +60,11 @@ def login_form():
 login_form()
 current_user = st.session_state.user
 
+# セッションIDの管理
+# ブラウザを閉じるか「新規チャット」を押すまで同一の thread_id を維持し会話履歴を保持する
+if "session_id" not in st.session_state:
+    st.session_state.session_id = f"session_{current_user}_{uuid.uuid4()}"
+
 # 履歴管理 (Firestore)
 def save_history(user, query, res, elapsed):
     # 全体の件数をカウントしてIDを生成
@@ -67,24 +84,21 @@ def load_history(user):
     docs = db.collection("chat_history").where("user", "==", user).order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
     return [d.to_dict() for d in docs]
 
-# Runner初期化
-@st.cache_resource
-def init_runner(user_id):
-    session_service = InMemorySessionService()
-    session_id = f"session_{user_id}_{uuid.uuid4()}"
-    asyncio.run(session_service.create_session(app_name=APP_NAME, user_id=user_id, session_id=session_id))
-    runner = Runner(app_name=APP_NAME, agent=root_agent, session_service=session_service)
-    return runner, session_id
+async def call_agent_async(user_id, session_id, query: str):
+    # LangGraphでの実行
+    inputs = {"messages": [HumanMessage(content=query)]}
+    
+    # 最終回答を取り出すためのロジック
+    final_content = ""
+    async for event in app_agent.astream(inputs, config={"configurable": {"thread_id": session_id}}):
+        for node, output in event.items():
+            if "messages" in output:
+                # 最後のAgentの発言を取得
+                last_msg = output["messages"][-1]
+                if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+                    final_content = last_msg.content
 
-async def call_agent_async(runner, user_id, session_id, query: str): 
-    content = types.Content(role='user', parts=[types.Part(text=query)])
-    async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
-        if event.is_final_response():
-            return event.content.parts[0].text if event.content else "回答なし"
-    return "Agent did not produce a final response."
-
-# サイドバーとメインのロジック
-runner, session_id = init_runner(current_user)
+    return final_content if final_content else "回答を生成できませんでした。"
 
 with st.sidebar:
     st.header("AI Agent PoC")
@@ -96,6 +110,8 @@ with st.sidebar:
     with col2:
         if st.button("新規チャット"):
             st.session_state.selected_history = None
+            # セッションIDを更新して会話をリセット
+            st.session_state.session_id = f"session_{current_user}_{uuid.uuid4()}"
             st.rerun()
     
     st.divider()
@@ -119,9 +135,10 @@ with col2:
         # セッション状態をクリアしてリロード
         st.session_state.user = None
         st.session_state.selected_history = None
+        st.session_state.pop("session_id", None)
         st.rerun()
 
-# 検索フォームを常に上部に配置
+# 検索フォーム
 with st.form("search_form", clear_on_submit=True):
     query = st.text_input("質問を入力してください")
     submit_button = st.form_submit_button("検索")
@@ -130,20 +147,19 @@ if submit_button:
     if query:
         start_all = time.time()
         with st.spinner("検索中…"):
-            res = asyncio.run(call_agent_async(runner, current_user, session_id, synonym_search(query)))
+            res = asyncio.run(call_agent_async(current_user, st.session_state.session_id, synonym_search(query)))
             elapsed = time.time() - start_all
             
             # DBに保存しIDを取得
             id = save_history(current_user, query, res, elapsed)
             
-            # 直後の検索結果を表示用にセット
+            # 表示用にセット
             st.session_state.selected_history = {
                 "id": id,
                 "query": query, 
                 "res": res, 
                 "time": elapsed
             }
-            # 検索時は履歴の表示状態を維持したいため、rerunは不要（そのまま以下の表示処理へ進む）
     else:
         st.warning("質問を入力してください")
 
