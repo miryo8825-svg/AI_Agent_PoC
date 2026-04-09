@@ -15,7 +15,7 @@ from tools import synonym_search
 from agent import app_agent
 from langchain_core.messages import HumanMessage
 
-# --- 環境変数の読み込み ---
+# --- 環境設定 ---
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
@@ -91,19 +91,17 @@ def load_history(user):
         return []
 
 async def call_agent_async(user_id, session_id, query: str):
-    # LangGraphでの実行
+    # 明示的に HumanMessage オブジェクトでラップして渡す
     inputs = {"messages": [HumanMessage(content=query)]}
     
     # 最終回答を取り出すためのロジック
     final_content = ""
+    print(f"INFO: call_agent_async started for query: {query}")
     
-    print(f"--- START AGENT CALL (User: {user_id}) ---")
-    print(f"Query: {query}")
-
     try:
         async for event in app_agent.astream(inputs, config={"configurable": {"thread_id": session_id}}):
             for node, output in event.items():
-                print(f"Node Executed: {node}") # どのノードが動いたかログ出力
+                print(f"DEBUG: Node Finished -> {node}")
                 if "messages" in output:
                     last_msg = output["messages"][-1]
                     # Tool呼び出しではなく最終回答の場合のみ内容を取得

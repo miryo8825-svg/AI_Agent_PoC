@@ -3,7 +3,7 @@ import os
 from typing import Annotated, Sequence, TypedDict
 
 from langchain_google_vertexai import ChatVertexAI
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -25,12 +25,12 @@ DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 # --- カスタムツールの定義 ---
 
 @tool
-def vertex_ai_search(query: str):
+def vertex_ai_search_tool(query: str):
     """Marklines社内データを詳細に検索します。
     引数:
         query: 検索クエリ
     """
-    
+    print(f"DEBUG: Executing vertex_ai_search with query: {query}")
     try:
         client_options = (
             ClientOptions(api_endpoint=f"{LOCATION}-discoveryengine.googleapis.com")
@@ -48,7 +48,7 @@ def vertex_ai_search(query: str):
             page_size=5,
             content_search_spec={
                 "summary_spec": {
-                    "summary_result_count": 5, # 制限値に合わせる
+                    "summary_result_count": 5,
                     "include_citations": True
                 },
                 "snippet_spec": {"max_snippet_count": 1}
@@ -88,34 +88,37 @@ llm = ChatVertexAI(
     model_name=DEFAULT_MODEL,
     project=PROJECT_ID,
     location=GCP_LOCATION,
-    # システムプロンプトをリストではなく引数として渡す（パースエラー対策）
-    system_instruction=config.INSTRUCTION_AGENT, 
-).bind_tools([vertex_ai_search, google_search_tool])
+).bind_tools([vertex_ai_search_tool, google_search_tool])
 
 def call_model(state: AgentState):
     """モデルを呼び出して次のアクションを決定する"""
     
-    # state["messages"] から SystemMessage を除外（system_instructionと重複させない）
-    # かつ、リストが空にならないようにフィルタリング
-    input_messages = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
+    # 全てのメッセージを抽出し、既存の SystemMessage があれば除去
+    # (重複を防ぎ、常に最新の instruction を先頭にするため)
+    other_messages = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
     
-    if not input_messages:
-        print("Warning: No messages to send to LLM.")
-        return {"messages": []}
+    # 常に SystemMessage をリストの先頭に追加して渡す
+    # これにより、ライブラリ内部の vertex_messages[-1] が空になるのを防ぐ
+    messages = [SystemMessage(content=config.INSTRUCTION_AGENT)] + other_messages
+    
+    # デバッグ: メッセージの型と数を出力
+    msg_types = [type(m).__name__ for m in messages]
+    print(f"DEBUG LLM Invoke: Types={msg_types}")
 
-    print(f"DEBUG LLM Invoke: Sending {len(input_messages)} messages.")
-    
     try:
-        response = llm.invoke(input_messages)
+        response = llm.invoke(messages)
         return {"messages": [response]}
     except Exception as e:
-        print(f"LLM Invoke Error: {e}")
+        print(f"FATAL ERROR in call_model: {e}")
+        # エラー発生時に詳細な情報を出力
+        if "messages" in locals():
+            print(f"DEBUG Error Context: {messages}")
         raise e
 
 # グラフ定義
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", call_model)
-workflow.add_node("tools", ToolNode([vertex_ai_search, google_search_tool]))
+workflow.add_node("tools", ToolNode([vertex_ai_search_tool, google_search_tool]))
 
 workflow.add_edge(START, "agent")
 workflow.add_conditional_edges("agent", tools_condition)
