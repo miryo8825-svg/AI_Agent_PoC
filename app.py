@@ -11,15 +11,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from tools import synonym_search
 
-# LangGraph関連のインポート
+# LangGraph関連
 from agent import app_agent
 from langchain_core.messages import HumanMessage
 
-# デバッグ
-# st.write(f"Files in /app: {os.listdir('.')}")
-load_dotenv()
+# --- 環境変数の読み込み ---
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
-# Firestoreクライアントの初期化
+# Firestoreクライアント初期化
 db = firestore.Client(database="ai-agent-poc-02")
 
 APP_NAME = "AI_Agent_PoC"
@@ -35,7 +35,7 @@ try:
     clean_json = valid_users_raw.strip().strip("'").strip('"')
     VALID_USERS = json.loads(clean_json)
 except json.JSONDecodeError as e:
-    st.error(f"環境変数 VALID_USERS_JSON の形式が正しくありません。エラー: {e}")
+    st.error(f"VALID_USERS_JSONの形式が不正です: {e}")
     VALID_USERS = {}
 
 # ログインフォーム
@@ -67,22 +67,28 @@ if "session_id" not in st.session_state:
 
 # 履歴管理 (Firestore)
 def save_history(user, query, res, elapsed):
-    # 全体の件数をカウントしてIDを生成
-    total_count = db.collection("chat_history").count().get()[0][0].value
-    db.collection("chat_history").add({
-        "user": user,
-        "query": query,
-        "res": res,
-        "time": elapsed,
-        "timestamp": datetime.now(),
-        "id": total_count + 1
-    })
-    return total_count + 1
+    try:
+        total_count = db.collection("chat_history").count().get()[0][0].value
+        db.collection("chat_history").add({
+            "user": user,
+            "query": query,
+            "res": res,
+            "time": elapsed,
+            "timestamp": datetime.now(),
+            "id": total_count + 1
+        })
+        return total_count + 1
+    except Exception as e:
+        print(f"Firestore Save Error: {e}")
+        return 0
 
 def load_history(user):
-    # Firestoreからログインユーザーの履歴を最新順に取得
-    docs = db.collection("chat_history").where("user", "==", user).order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-    return [d.to_dict() for d in docs]
+    try:
+        docs = db.collection("chat_history").where("user", "==", user).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(10).stream()
+        return [d.to_dict() for d in docs]
+    except Exception as e:
+        print(f"Firestore Load Error: {e}")
+        return []
 
 async def call_agent_async(user_id, session_id, query: str):
     # LangGraphでの実行
@@ -90,16 +96,27 @@ async def call_agent_async(user_id, session_id, query: str):
     
     # 最終回答を取り出すためのロジック
     final_content = ""
-    async for event in app_agent.astream(inputs, config={"configurable": {"thread_id": session_id}}):
-        for node, output in event.items():
-            if "messages" in output:
-                # 最後のAgentの発言を取得
-                last_msg = output["messages"][-1]
-                if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
-                    final_content = last_msg.content
+    
+    print(f"--- START AGENT CALL (User: {user_id}) ---")
+    print(f"Query: {query}")
 
-    return final_content if final_content else "回答を生成できませんでした。"
+    try:
+        async for event in app_agent.astream(inputs, config={"configurable": {"thread_id": session_id}}):
+            for node, output in event.items():
+                print(f"Node Executed: {node}") # どのノードが動いたかログ出力
+                if "messages" in output:
+                    last_msg = output["messages"][-1]
+                    # Tool呼び出しではなく最終回答の場合のみ内容を取得
+                    if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+                        final_content = last_msg.content
 
+        return final_content if final_content else "回答を生成できませんでした。"
+    except Exception as e:
+        error_msg = f"Agent Error: {str(e)}"
+        print(error_msg)
+        return error_msg
+
+# --- サイドバー表示 ---
 with st.sidebar:
     st.header("AI Agent PoC")
     col1, col2 = st.columns(2)
@@ -118,15 +135,13 @@ with st.sidebar:
     # DBから読み込み
     histories = load_history(current_user)
     for i, item in enumerate(histories):
-        # 履歴選択時にIDも含めてセット
-        h_id = item.get("id", "?") # 過去データ用
-        if st.button(f"No.{h_id}: {item['query'][:20]}...", key=f"hist_{i}"):
+        h_id = item.get("id", "?")
+        if st.button(f"No.{h_id}: {item['query'][:15]}...", key=f"hist_{i}"):
             st.session_state.selected_history = {**item, "id": h_id}
             st.rerun()
 
 # --- メイン画面 ---
 st.title("AI Agent PoC")
-
 col1, col2 = st.columns([4, 1])
 with col1:
     st.write(f"*ログイン中*　ユーザー：{current_user}")
@@ -135,53 +150,38 @@ with col2:
         # セッション状態をクリアしてリロード
         st.session_state.user = None
         st.session_state.selected_history = None
-        st.session_state.pop("session_id", None)
         st.rerun()
 
 # 検索フォーム
 with st.form("search_form", clear_on_submit=True):
-    query = st.text_input("質問を入力してください")
+    query_input = st.text_input("質問を入力してください")
     submit_button = st.form_submit_button("検索")
 
 if submit_button:
-    if query:
+    if query_input:
         start_all = time.time()
-        with st.spinner("検索中…"):
-            res = asyncio.run(call_agent_async(current_user, st.session_state.session_id, synonym_search(query)))
+        with st.spinner("思考中..."):
+            # synonym_searchを実行してクエリを拡張
+            enhanced_query = synonym_search(query_input)
+            print(f"Enhanced Query: {enhanced_query}")
+            
+            res = asyncio.run(call_agent_async(current_user, st.session_state.session_id, enhanced_query))
             elapsed = time.time() - start_all
             
-            # DBに保存しIDを取得
-            id = save_history(current_user, query, res, elapsed)
-            
-            # 表示用にセット
-            st.session_state.selected_history = {
-                "id": id,
-                "query": query, 
-                "res": res, 
-                "time": elapsed
-            }
+            # 履歴保存
+            h_id = save_history(current_user, query_input, res, elapsed)
+            st.session_state.selected_history = {"id": h_id, "query": query_input, "res": res, "time": elapsed}
     else:
         st.warning("質問を入力してください")
 
 # 結果表示
 if st.session_state.get("selected_history"):
+    hist = st.session_state.selected_history
     st.divider()
-    h_id = st.session_state.selected_history.get("id", "?")
-    
-    # 質問カード
     with st.container(border=True):
-        st.caption(f"質問 *No.{h_id}*")
-        st.write(st.session_state.selected_history['query'])
-    
-    # 回答カード
+        st.caption(f"質問 No.{hist.get('id', '?')}")
+        st.write(hist['query'])
     with st.container(border=True):
         st.caption("回答")
-        res_text = st.session_state.selected_history['res']
-        st.write(res_text)
-        
-        # コピーボタン
-        # if st.button("Copy"):
-        #     st.write(f'<script>navigator.clipboard.writeText(`{res_text.replace("`", "")}`)</script>', unsafe_allow_html=True)
-        #     st.toast("クリップボードにコピーしました")
-
-    st.info(f"実行時間：{st.session_state.selected_history['time']:.2f} 秒")
+        st.write(hist['res'])
+    st.info(f"実行時間: {hist['time']:.2f} 秒")

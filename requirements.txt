@@ -6,12 +6,11 @@ langgraph>=0.3.0
 langchain-core>=0.3.0
 langchain-google-vertexai>=2.0.0
 langchain-google-genai>=4.2.1
-google-cloud-aiplatform>=1.81.0
 
 # Google Cloud SDKs
 google-cloud-discoveryengine>=0.13.0
 google-cloud-firestore>=2.14.0
-google-cloud-aiplatform>=1.80.0
+google-cloud-aiplatform>=1.81.0
 
 # Utilities
 python-dotenv>=1.0.0
