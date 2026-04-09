@@ -2,7 +2,7 @@
 import os
 from typing import Annotated, Sequence, TypedDict
 
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
@@ -76,37 +76,36 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], "会話履歴"]
 
 # モデルの初期化
-llm = ChatVertexAI(
-    model_name=DEFAULT_MODEL,
+llm = ChatGoogleGenerativeAI(
+    model=DEFAULT_MODEL,
     project=PROJECT_ID,
-    location=GCP_LOCATION,
-    streaming=True
-).bind_tools(tools)
+    vertexai=True,
+)
 
 def call_model(state: AgentState):
     """モデル呼び出しとメッセージ成型"""
     
-    # メッセージリスト再構築
-    raw_messages = state["messages"]
-    processed_messages = []
+    # 1. 履歴のクリーニングと SystemMessage の配置
+    processed_messages = [SystemMessage(content=config.INSTRUCTION_AGENT)]
     
-    # システムメッセージ配置
-    processed_messages.append(SystemMessage(content=config.INSTRUCTION_AGENT))
-    
-    for m in raw_messages:
+    for m in state["messages"]:
         if isinstance(m, SystemMessage):
             continue
-
-        # AIMessage(tool_callsあり)のcontentがNoneや空だとSDKの変換で落ちるため、""(空文字)を保証する
+        
+        # 2. 【最重要】IndexErrorを物理的に回避する処理
+        # AIMessage(tool_calls)のcontentが空だとSDKが履歴から除外してしまい、
+        # 直後のToolMessageのパースで vertex_messages[-1] がエラーになる。
+        # contentに半角スペースを1つ入れることで、SDKに「有効なターン」として認識させる。
         if isinstance(m, AIMessage) and m.tool_calls:
-            if m.content is None:
-                m.content = ""
+            if not m.content or m.content.strip() == "":
+                m.content = " " 
         
         processed_messages.append(m)
 
     try:
+        # 3. 再構築したメッセージリストで呼び出し
         response = llm.invoke(processed_messages)
-        # contentがNoneならresponseを空文字にする
+        # 応答のcontentがNoneなら空文字に補完
         if response.content is None:
             response.content = ""
         return {"messages": [response]}
@@ -125,5 +124,4 @@ workflow.add_edge("tools", "agent")
 
 # コンパイル (チェックポインタをメモリ上に配置)
 from langgraph.checkpoint.memory import MemorySaver
-memory = MemorySaver()
-app_agent = workflow.compile(checkpointer=memory)
+app_agent = workflow.compile(checkpointer=MemorySaver())
