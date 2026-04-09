@@ -22,14 +22,8 @@ load_dotenv(dotenv_path=env_path, override=True)
 # Firestoreクライアント初期化
 db = firestore.Client(database="ai-agent-poc-02")
 
-APP_NAME = "AI_Agent_PoC"
-
 # --- ユーザー管理 ---
 valid_users_raw = os.getenv("VALID_USERS_JSON", "{}")
-
-# デバッグ用（エラーが出る場合のみコメントを外して確認）
-# st.write(f"DEBUG: {valid_users_raw}") 
-
 try:
     # 前後の不要な引用符や空白を削除してからパース
     clean_json = valid_users_raw.strip().strip("'").strip('"')
@@ -104,8 +98,8 @@ async def call_agent_async(user_id, session_id, query: str):
                 print(f"DEBUG: Node Finished -> {node}")
                 if "messages" in output:
                     last_msg = output["messages"][-1]
-                    # Tool呼び出しではなく最終回答の場合のみ内容を取得
-                    if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+                    # 回答テキストがある場合のみ取得
+                    if last_msg.content and (not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls):
                         final_content = last_msg.content
 
         return final_content if final_content else "回答を生成できませんでした。"
@@ -128,7 +122,6 @@ with st.sidebar:
             # セッションIDを更新して会話をリセット
             st.session_state.session_id = f"session_{current_user}_{uuid.uuid4()}"
             st.rerun()
-    
     st.divider()
     # DBから読み込み
     histories = load_history(current_user)
@@ -158,7 +151,7 @@ with st.form("search_form", clear_on_submit=True):
 if submit_button:
     if query_input:
         start_all = time.time()
-        with st.spinner("思考中..."):
+        with st.spinner("検索中..."):
             # synonym_searchを実行してクエリを拡張
             enhanced_query = synonym_search(query_input)
             print(f"Enhanced Query: {enhanced_query}")
