@@ -24,7 +24,7 @@ def synonym_search(user_query: str) -> str:
     # 共通条件
     source_condition = (
         f"\n\n**【追加条件】**\n"
-        f"- **分析レポートの文中に、出典の完全なURLを必ず含めること。フォーマットは[[1](URL)]形式にすること。**"
+        f"- **分析レポートの文中に、出典の完全なURLを必ず含めること。フォーマットは[[1](URL)]形式にすること。**\n"
     )
     
     # SYNONYM_DICTがない場合、出典条件のみを付与
@@ -41,7 +41,7 @@ def synonym_search(user_query: str) -> str:
     if found_synonyms:
         synonyms_str = ", ".join(list(found_synonyms))
         system_context = (
-            f"- **以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと: {synonyms_str}**"
+            f"- 以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと。\n\n**類義語: {synonyms_str}**\n"
         )
         return user_query + source_condition + system_context
     
