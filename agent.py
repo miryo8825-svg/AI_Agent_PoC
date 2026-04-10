@@ -2,7 +2,6 @@
 import os
 from typing import Annotated, Sequence, Optional
 
-# LangGraph 公式推奨の State 管理
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -23,15 +22,18 @@ GCP_LOCATION = "us-central1"
 DATA_STORE_ID = "ai-agent-poc2_1774259178825_opensearch_output_formatted"
 ENGINE_ID = "ai-agent-poc4-natural-lang_1774512163529"
 DEFAULT_MODEL = 'gemini-2.5-flash-lite'
+# DEFAULT_MODEL = 'gemini-3.1-flash-lite-preview'
+
+MAX_TOOL_CALL = 3
 
 # --- カスタムツール定義 ---
 @tool("marklines_search")
 def marklines_search(query: str, filter: Optional[str] = None):
     """
-    Marklinesの自動車業界専門データベースを検索します。
+    Marklines社内の自動車業界専門データベースを検索します。
     引数:
         query: 検索キーワード
-        filter: 検索フィルタ（例: datetimeやurl_categoryの指定）
+        filter: 検索フィルタ（例: `datetime`や`url_category`などの指定）
     販売台数、スペック、企業情報、市場動向などの社内データが必要な場合に必ず使用してください。
     """
     try:
@@ -42,10 +44,10 @@ def marklines_search(query: str, filter: Optional[str] = None):
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
             query=query,
-            filter=filter, # モデルが生成したフィルタを適用
-            page_size=5,
+            filter=filter,
+            page_size=10,
             content_search_spec={
-                "summary_spec": {"summary_result_count": 5, "include_citations": True},
+                "summary_spec": {"summary_result_count": 10, "include_citations": True},
                 "snippet_spec": {"max_snippet_count": 1}
             }
         )
@@ -69,7 +71,8 @@ def marklines_search(query: str, filter: Optional[str] = None):
 @tool("google_search_tool")
 def google_search_tool(query: str):
     """
-    最新ニュースや一般的な公開情報をGoogle検索します。社内データのみではクエリ意図を満たせないケースのみに使用してください。
+    最新ニュースや一般的な公開情報をGoogle検索します。
+    社内データのみではクエリ意図を満たせないケースのみに使用してください。
     """
     return f"Google Search Result for: {query} (Simulated)"
 
@@ -77,7 +80,7 @@ tools = [marklines_search, google_search_tool]
 
 # --- Agent（Graph）構築 ---
 
-# モデルの初期化
+# モデル初期化
 llm = ChatGoogleGenerativeAI(
     model=DEFAULT_MODEL,
     project=PROJECT_ID,
@@ -86,32 +89,26 @@ llm = ChatGoogleGenerativeAI(
 
 def call_model(state: MessagesState):
     """モデル呼び出しとメッセージ成型"""
-    
-    # MessagesState の state["messages"] には全履歴が含まれる
-    # Vertex AI SDK のバグ回避のため、一時的に履歴を加工
+
     processed_messages = []
-    
-    # 最初のメッセージが SystemMessage でない場合、先頭に挿入
-    if not any(isinstance(m, SystemMessage) for m in state["messages"]):
-        processed_messages.append(SystemMessage(content=config.INSTRUCTION_AGENT))
     
     for m in state["messages"]:
         if isinstance(m, SystemMessage): continue
-            
-        # 【重要】IndexError回避策：空のAIMessageにスペースを入れる
-        if isinstance(m, AIMessage) and m.tool_calls:
-            if not m.content or m.content.strip() == "":
-                m.content = " " 
         processed_messages.append(m)
 
     try:
         response = llm.invoke(processed_messages)
+        
+        if response.tool_calls and len(response.tool_calls) > MAX_TOOL_CALL:
+            print(f"DEBUG: Too many tool calls ({len(response.tool_calls)}). Truncating to {MAX_TOOL_CALL}.")
+            response.tool_calls = response.tool_calls[:MAX_TOOL_CALL]
+        
         if response.content is None:
             response.content = ""
         return {"messages": [response]}
     except Exception as e:
         print(f"LLM ERROR: {e}")
-        # 万が一のIndexError時のフォールバック
+        # IndexError時のフォールバック
         if "IndexError" in str(e):
             last_human = [m for m in processed_messages if isinstance(m, HumanMessage)][-1]
             return {"messages": [llm.invoke([processed_messages[0], last_human])]}

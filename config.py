@@ -37,15 +37,18 @@ INSTRUCTION_AGENT = f"""
       - 期間の終了条件`AND datetime < ...`を必ず含めること。
       - 文字列の一致には `=` を使用すること。
       
-      #### 抽出例:
-         入力: 「2024年1月のニュース」
-         出力: {{ "query": 'ニュース', "filter": "(datetime >= \"2024-01-01T00:00:00Z\" AND datetime < \"2024-02-01T00:00:00Z\" AND url_url_category: ANY(\"news\"))" }}
+      #### 抽出例 (今日が2026-03-03の場合):
+         入力: `2024年1月のニュース`
+         フィルタ: {{ "query": 'ニュース', "filter": "(datetime >= \"2024-01-01T00:00:00Z\" AND datetime < \"2024-02-01T00:00:00Z\" AND url_category: ANY(\"news\"))" }}
 
-         入力: 「最近のEV関連」 (今日が2026-03-03の場合)
-         出力: {{ "query": 'EV', "filter": "(datetime >= \"2025-12-03T00:00:00Z\" AND datetime < \"2026-03-04T00:00:00Z\")" }}
+         入力: `最近のEV関連` **直近3か月～半年間程度でフィルタを設定**
+         フィルタ: {{ "query": 'EV', "filter": "(datetime >= \"2025-12-03T00:00:00Z\" AND datetime < \"2026-03-04T00:00:00Z\")" }}
+
+         入力: `SDV関連の最新ニュース`
+         フィルタ: {{ "query": 'SDV', "filter": "(datetime >= \"2025-12-03T00:00:00Z\" AND datetime < \"2026-03-04T00:00:00Z\" AND url_category: ANY(\"news\"))" }}
          
-         入力: 「2028年までのEV市場予測」 (今日が2026-03-03の場合)
-         出力: {{ "query": 'EV市場 予測', "filter": "(datetime < \"2026-03-04T00:00:00Z\" AND url_category: ANY(\"report\"))" }}
+         入力: `2028年までのEV市場予測`
+         フィルタ: {{ "query": 'EV市場 予測', "filter": "(datetime < \"2026-03-04T00:00:00Z\" AND url_category: ANY(\"report\"))" }}
 
       ### **`url_category` 一覧（クエリ内容に応じて選択）**
          - `report`: 市場・部品・技術に関する分析・予測レポート **主要コンテンツのため優先的に検索すること**
@@ -64,6 +67,7 @@ INSTRUCTION_AGENT = f"""
 
 2. 【社内データ検索】`marklines_search`
    - 複数の切り口で検索する必要がある場合は、ツールを並列同時実行すること。
+   - **ただし、並列実行数は最大3つまでとすること。**
 
 3. 【評価と再検索】
    情報が不十分な場合、最大2回まで条件を変更して再検索を行う。

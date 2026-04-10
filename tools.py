@@ -2,9 +2,7 @@
 import csv
 import os
 
-# =========================================================
-# 類義語辞書作成（モジュールロード時に1回だけ実行）
-# =========================================================
+# --- 類義語辞書作成（モジュールロード時に1回だけ実行） ---
 SYNONYM_DICT = {}
 SYNONYMS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'synonyms.csv')
 
@@ -20,11 +18,12 @@ if os.path.exists(SYNONYMS_FILE_PATH):
                 # 自分以外の単語を類義語リストとして追加
                 SYNONYM_DICT[word].update([w for w in words if w != word])
 
+# --- 類義語検索 ---
 def synonym_search(user_query: str) -> str:
     # 共通条件
     source_condition = (
         f"\n\n**【追加条件】**\n"
-        f"- **分析レポートの文中に、出典の完全なURLを必ず含めること。フォーマットは[[1](URL)]形式にすること。**\n"
+        f"- **分析レポートの文中に、出典の完全なURLを必ず含めること。フォーマットは`[[1](URL)]`形式にすること。**\n"
     )
     
     # SYNONYM_DICTがない場合、出典条件のみを付与
@@ -41,7 +40,7 @@ def synonym_search(user_query: str) -> str:
     if found_synonyms:
         synonyms_str = ", ".join(list(found_synonyms))
         system_context = (
-            f"- 以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと。\n\n**類義語: {synonyms_str}**\n"
+            f"- 以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと。**類義語: {synonyms_str}**\n"
         )
         return user_query + source_condition + system_context
     
