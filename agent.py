@@ -1,12 +1,14 @@
 #agent.py
 import os
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Sequence, Optional
+
+# LangGraph 公式推奨の State 管理
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
 from langchain_core.tools import tool
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import discoveryengine_v1beta as discoveryengine
@@ -16,20 +18,22 @@ import config
 
 # --- 設定値 ---
 PROJECT_ID = "gen-lang-client-0531287984"
-LOCATION = "global"  # Discovery Engine用
-GCP_LOCATION = "us-central1"  # Vertex AI (Gemini)用
+LOCATION = "global"
+GCP_LOCATION = "us-central1"
 DATA_STORE_ID = "ai-agent-poc2_1774259178825_opensearch_output_formatted"
 ENGINE_ID = "ai-agent-poc4-natural-lang_1774512163529"
 DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 
 # --- カスタムツール定義 ---
 @tool("marklines_search")
-def marklines_search(query: str):
+def marklines_search(query: str, filter: Optional[str] = None):
     """
     Marklinesの自動車業界専門データベースを検索します。
+    引数:
+        query: 検索キーワード
+        filter: 検索フィルタ（例: datetimeやurl_categoryの指定）
     販売台数、スペック、企業情報、市場動向などの社内データが必要な場合に必ず使用してください。
     """
-    print(f"DEBUG: Executing Tool[marklines_search] Query: {query}")
     try:
         client_options = ClientOptions(api_endpoint=f"{LOCATION}-discoveryengine.googleapis.com") if LOCATION != "global" else None
         client = discoveryengine.SearchServiceClient(client_options=client_options)
@@ -38,6 +42,7 @@ def marklines_search(query: str):
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
             query=query,
+            filter=filter, # モデルが生成したフィルタを適用
             page_size=5,
             content_search_spec={
                 "summary_spec": {"summary_result_count": 5, "include_citations": True},
@@ -59,7 +64,6 @@ def marklines_search(query: str):
             })
         return str(results) if results else "関連データは見つかりませんでした。"
     except Exception as e:
-        print(f"TOOL ERROR: {e}")
         return f"検索エラー: {str(e)}"
 
 @tool("google_search_tool")
@@ -72,49 +76,50 @@ def google_search_tool(query: str):
 tools = [marklines_search, google_search_tool]
 
 # --- Agent（Graph）構築 ---
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], "会話履歴"]
 
 # モデルの初期化
 llm = ChatGoogleGenerativeAI(
     model=DEFAULT_MODEL,
     project=PROJECT_ID,
     vertexai=True,
-)
+).bind_tools(tools)
 
-def call_model(state: AgentState):
+def call_model(state: MessagesState):
     """モデル呼び出しとメッセージ成型"""
     
-    # 1. 履歴のクリーニングと SystemMessage の配置
-    processed_messages = [SystemMessage(content=config.INSTRUCTION_AGENT)]
+    # MessagesState の state["messages"] には全履歴が含まれる
+    # Vertex AI SDK のバグ回避のため、一時的に履歴を加工
+    processed_messages = []
+    
+    # 最初のメッセージが SystemMessage でない場合、先頭に挿入
+    if not any(isinstance(m, SystemMessage) for m in state["messages"]):
+        processed_messages.append(SystemMessage(content=config.INSTRUCTION_AGENT))
     
     for m in state["messages"]:
-        if isinstance(m, SystemMessage):
-            continue
-        
-        # 2. 【最重要】IndexErrorを物理的に回避する処理
-        # AIMessage(tool_calls)のcontentが空だとSDKが履歴から除外してしまい、
-        # 直後のToolMessageのパースで vertex_messages[-1] がエラーになる。
-        # contentに半角スペースを1つ入れることで、SDKに「有効なターン」として認識させる。
+        if isinstance(m, SystemMessage): continue
+            
+        # 【重要】IndexError回避策：空のAIMessageにスペースを入れる
         if isinstance(m, AIMessage) and m.tool_calls:
             if not m.content or m.content.strip() == "":
                 m.content = " " 
-        
         processed_messages.append(m)
 
     try:
-        # 3. 再構築したメッセージリストで呼び出し
         response = llm.invoke(processed_messages)
-        # 応答のcontentがNoneなら空文字に補完
         if response.content is None:
             response.content = ""
         return {"messages": [response]}
     except Exception as e:
         print(f"LLM ERROR: {e}")
+        # 万が一のIndexError時のフォールバック
+        if "IndexError" in str(e):
+            last_human = [m for m in processed_messages if isinstance(m, HumanMessage)][-1]
+            return {"messages": [llm.invoke([processed_messages[0], last_human])]}
         raise e
 
-# --- グラフ定義 ---
-workflow = StateGraph(AgentState)
+# グラフ定義
+workflow = StateGraph(MessagesState)
+
 workflow.add_node("agent", call_model)
 workflow.add_node("tools", ToolNode(tools))
 
