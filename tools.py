@@ -40,7 +40,7 @@ def synonym_search(user_query: str) -> str:
     if found_synonyms:
         synonyms_str = ", ".join(list(found_synonyms))
         system_context = (
-            f"- 以下の類義語も必ず「OR条件」に含めて検索すること。出力時に類義語の列挙や説明は行わないこと。**類義語: {synonyms_str}**\n"
+            f"- 以下の類義語も必ず`query`に追加すること。最終レポートに類義語の列挙や説明は含めないこと。**類義語: {synonyms_str}**\n"
         )
         return user_query + source_condition + system_context
     
