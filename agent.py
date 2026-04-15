@@ -21,8 +21,8 @@ LOCATION = "global"
 GCP_LOCATION = "us-central1"
 DATA_STORE_ID = "ai-agent-poc2_1774259178825_opensearch_output_formatted"
 ENGINE_ID = "ai-agent-poc4-natural-lang_1774512163529"
-DEFAULT_MODEL = 'gemini-2.5-flash-lite'
-# DEFAULT_MODEL = 'gemini-3.1-flash-lite-preview'
+# DEFAULT_MODEL = 'gemini-2.5-flash-lite'
+DEFAULT_MODEL = 'gemini-3.1-flash-lite-preview'
 
 MAX_TOOL_CALL = 3
 
@@ -90,7 +90,13 @@ llm = ChatGoogleGenerativeAI(
 def call_model(state: MessagesState):
     """モデル呼び出しとメッセージ成型"""
 
+    # 1. 履歴のクリーニングと SystemMessage の配置
+    processed_messages = [SystemMessage(content=config.INSTRUCTION_AGENT)]
     processed_messages = []
+    
+    # 最初のメッセージが SystemMessage でない場合、先頭に挿入
+    if not any(isinstance(m, SystemMessage) for m in state["messages"]):
+        processed_messages.append(SystemMessage(content=config.INSTRUCTION_AGENT))
     
     for m in state["messages"]:
         if isinstance(m, SystemMessage): continue
