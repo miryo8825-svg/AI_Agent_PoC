@@ -100,7 +100,10 @@ async def call_agent_async(user_id, session_id, query: str):
                     last_msg = output["messages"][-1]
                     # 回答テキストがある場合のみ取得
                     if last_msg.content and (not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls):
-                        final_content = last_msg.content
+                        if isinstance(last_msg.content, list):
+                            final_content = "".join(part.get("text", "") for part in last_msg.content if isinstance(part, dict))
+                        else:
+                            final_content = last_msg.content
 
         return final_content if final_content else "回答を生成できませんでした。"
     except Exception as e:
